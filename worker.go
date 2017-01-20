@@ -6,16 +6,16 @@ type worker struct {
 	jobs chan Job
 }
 
-func (jq *worker) doWork() {
+func (w *worker) doWork() {
 	for {
 		select {
-		case j := <-jq.jobs:
+		case j := <-w.jobs:
 			j.RespondTo() <- j.Process()
 		}
 	}
 }
 
-func (jq *worker) addWork(j Job) error {
-	jq.jobs <- j
+func (w *worker) addWork(j Job) error {
+	w.jobs <- j
 	return nil
 }
