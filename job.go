@@ -1,4 +1,4 @@
-package dcarbone
+package jobber
 
 type Job interface {
 	Name() string

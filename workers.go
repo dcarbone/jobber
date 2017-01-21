@@ -1,4 +1,4 @@
-package dcarbone
+package jobber
 
 import "sync"
 

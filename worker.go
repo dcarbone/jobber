@@ -1,4 +1,4 @@
-package dcarbone
+package jobber
 
 type worker struct {
 	name string
