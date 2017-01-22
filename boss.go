@@ -73,8 +73,8 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 		// shout
 		if debug {
 			logger.Printf(
-				"Jobber: Incoming new worker request for job \"%s\" request specified invalid queue"+
-					" length of \"%d\", will set length to \"0\"\n",
+				"Jobber: Incoming new worker \"%s\" request specified invalid queue length of \"%d\","+
+					" will set length to \"0\"\n",
 				name,
 				queueLength)
 		}
