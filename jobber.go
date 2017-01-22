@@ -6,19 +6,38 @@ import (
 	"log"
 )
 
-var boss sync.RWMutex
-
-var workers map[string]*worker
-
+// package logger
 var logger *log.Logger
 
+// is you be debugging?
 var debug bool
 
-func init() {
-	boss = sync.RWMutex{}
-	workers = make(map[string]*worker)
+// Boss controls the life of the worker
+type Boss struct {
+	*sync.RWMutex
 
+	workers map[string]*worker
+	hr      chan *worker
+}
+
+func init() {
 	logger = &log.Logger{}
+}
+
+// New creates a Boss
+func New(name string) *Boss {
+	// initialize boss
+	b := &Boss{
+		RWMutex: &sync.RWMutex{},
+
+		workers: make(map[string]*worker),
+		hr: make(chan *worker, 100),
+	}
+
+	// start up that hr team...
+	go b.exitInterview()
+
+	return b
 }
 
 // SetLogger can be used to define your own logger instance
@@ -37,11 +56,11 @@ func DisableDebug() {
 }
 
 // HasWorker lets you know if a worker already exists for a job
-func HasWorker(name string) bool {
-	boss.RLock()
-	defer boss.RUnlock()
+func (b *Boss) HasWorker(name string) bool {
+	b.RLock()
+	defer b.RUnlock()
 
-	if _, ok := workers[name]; ok {
+	if _, ok := b.workers[name]; ok {
 		return true
 	}
 
@@ -49,9 +68,9 @@ func HasWorker(name string) bool {
 }
 
 // NewWorker will attempt to create a new worker for a job. Returns error if you've already hired somebody.
-func NewWorker(name string, queueLength int) error {
+func (b *Boss) NewWorker(name string, queueLength int) error {
 	// see if we're already got somebody doin' it
-	if HasWorker(name) {
+	if b.HasWorker(name) {
 		if debug {
 			logger.Printf("Jobber: A worker for job \"%s\" already exists.\n", name)
 		}
@@ -79,17 +98,14 @@ func NewWorker(name string, queueLength int) error {
 		queueLength)
 
 	// lock boss down
-	boss.Lock()
-	defer boss.Unlock()
+	b.Lock()
+	defer b.Unlock()
 
 	// add worker
-	workers[name] = &worker{
-		name: name,
-		jobs: make(chan Job, queueLength),
-	}
+	b.workers[name] = newWorker(name, queueLength)
 
 	// start up work routine
-	go workers[name].doWork()
+	go b.workers[name].doWork()
 
 	// maybe say so?
 	if debug {
@@ -100,9 +116,9 @@ func NewWorker(name string, queueLength int) error {
 }
 
 // AddWork will push a new job to the end of a worker's queue
-func AddJob(workerName string, j Job) error {
+func (b *Boss) AddJob(workerName string, j Job) error {
 	// see if we've already hired this worker
-	if false == HasWorker(workerName) {
+	if false == b.HasWorker(workerName) {
 		if debug {
 			logger.Printf("Jobber: No worker with \"%s\" found.\n", workerName)
 		}
@@ -110,14 +126,51 @@ func AddJob(workerName string, j Job) error {
 	}
 
 	// lock boss down
-	boss.RLock()
-	defer boss.RUnlock()
+	b.RLock()
+	defer b.RUnlock()
 
 	// add to worker queue
-	return workers[workerName].addJob(j)
+	return b.workers[workerName].addJob(j)
 }
 
 // NewUnbufferedWorker will attempt to create a new worker with a queue length of 0
-func NewUnbufferedWorker(name string) error {
-	return NewWorker(name, 0)
+func (b *Boss) NewUnbufferedWorker(name string) error {
+	return b.NewWorker(name, 0)
+}
+
+// StopWorker will tell a worker to finish up their queue then remove them
+func (b *Boss) StopWorker(workerName string) error {
+	if false == b.HasWorker(workerName) {
+		if debug {
+			logger.Printf("Jobber: No worker named \"%s\" found, cannot tell them to stop.", workerName)
+		}
+		return fmt.Errorf("No worker named \"%s\" found, cannot tell them to stop.", workerName)
+	}
+
+	b.RLock()
+	defer b.RUnlock()
+
+	err := b.workers[workerName].stop(b.hr)
+	if nil != err {
+		return err
+	}
+
+	return nil
+}
+
+// exitInterview processes workers coming in to hr
+func (b *Boss) exitInterview() {
+	for {
+		select {
+		case w := <-b.hr:
+			logger.Printf("Jobber: Worker \"%s\" has completed all queued tasks.  They completed" +
+				"\"%d\" jobs all told. Goodbye, \"%s\"...\n",
+				w.name,
+				w.completed,
+				w.name)
+			b.Lock()
+			delete(b.workers, w.name)
+			b.Unlock()
+		}
+	}
 }

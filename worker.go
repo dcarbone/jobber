@@ -1,14 +1,30 @@
 package jobber
 
-import "time"
+import (
+	"time"
+	"fmt"
+	"sync"
+)
 
 type worker struct {
 	name      string
+	jobs      chan Job
 
 	added uint64
 	completed uint64
 
-	jobs      chan Job
+	stopLock sync.Mutex
+	stopping bool
+	hr chan *worker
+}
+
+func newWorker(name string, queueLength int) *worker {
+	return  &worker{
+		name: name,
+		jobs: make(chan Job, queueLength),
+
+		stopLock: sync.Mutex{},
+	}
 }
 
 // doWork does just that.
@@ -34,16 +50,49 @@ func (w *worker) doWork() {
 			}
 			// we've completed a job!
 			w.completed++
+
+			// check if we've been told to stop...
+			if w.stopping && 0 == len(w.jobs) {
+				// walk ourselves to hr...
+				w.hr <- w
+				return
+			}
 		}
 	}
 }
 
 // addJob appends this worker's queue with the incoming job
 func (w *worker) addJob(j Job) error {
+	if w.stopping {
+		logger.Printf("Jobber: Worker \"%s\" has been told to stop, cannot add new jobs.\n", w.name)
+		return fmt.Errorf("Worker \"%s\" has been told to stop, cannot add new jobs.", w.name)
+	}
 	if debug {
 		logger.Printf("Jobber: Adding job \"%d\" to \"%s\" queue...", w.added, w.name)
 	}
 	w.jobs <- j
 	w.added++
+	return nil
+}
+
+// stop will tell the worker to complete it's current task list then shut down...
+func (w *worker) stop(hr chan *worker) error {
+	// if i've already been told to stop..
+	if w.stopping {
+		logger.Printf("Jobber: Worker \"%s\" has already been told to stop.", w.name)
+		return fmt.Errorf("Worker \"%s\" has already been told to stop.", w.name)
+	}
+
+	// don't tell me more than once!
+	w.stopLock.Lock()
+	defer w.stopLock.Unlock()
+
+	// i'm stoppin...
+	w.stopping = true
+	w.hr = hr
+
+	// tell the world
+	logger.Printf("Jobber: Stopping worker \"%s\"...\n", w.name)
+
 	return nil
 }
