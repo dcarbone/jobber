@@ -59,7 +59,7 @@ func (w *worker) doWork() {
 			// if debugging, print duration stats
 			if debug {
 				logger.Printf(
-					"Jobber: \"%s\" job \"%d\" took \"%s\" nanoseconds to complete.\n",
+					"Jobber: \"%s\" job \"%d\" took \"%d\" nanoseconds to complete.\n",
 					w.name,
 					w.completed,
 					time.Now().Sub(start).Nanoseconds())

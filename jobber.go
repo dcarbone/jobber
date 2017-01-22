@@ -16,7 +16,10 @@ package jobber
 	limitations under the License.
 */
 
-import "log"
+import (
+	"log"
+	"os"
+)
 
 // package logger
 var logger *log.Logger
@@ -25,7 +28,7 @@ var logger *log.Logger
 var debug bool
 
 func init() {
-	logger = &log.Logger{}
+	logger = log.New(os.Stderr, "", log.LstdFlags)
 }
 
 // SetLogger can be used to define your own logger instance
