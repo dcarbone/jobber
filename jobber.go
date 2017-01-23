@@ -16,13 +16,29 @@ package jobber
 	limitations under the License.
 */
 
+// TODO: More better or something?
+
 import (
 	"log"
 	"os"
 )
 
+type StdLogger interface {
+	Print(v ...interface{})
+	Printf(format string, v ...interface{})
+	Println(v ...interface{})
+
+	Fatal(v ...interface{})
+	Fatalf(format string, v ...interface{})
+	Fatalln(v ...interface{})
+
+	Panic(v ...interface{})
+	Panicf(format string, v ...interface{})
+	Panicln(v ...interface{})
+}
+
 // package logger
-var logger *log.Logger
+var logger StdLogger
 
 // is you be debugging?
 var debug bool
@@ -32,7 +48,7 @@ func init() {
 }
 
 // SetLogger can be used to define your own logger instance
-func SetLogger(l *log.Logger) {
+func SetLogger(l StdLogger) {
 	logger = l
 }
 
