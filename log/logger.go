@@ -40,9 +40,9 @@ func SetLogger(l StdLogger) {
 
 func Print(v ...interface{}) {
 	if custom {
-		logger.Print(v...)
-	} else {
 		logger.Print(append(logPrefixSlice, v...)...)
+	} else {
+		logger.Print(v...)
 	}
 }
 func Printf(format string, v ...interface{}) {
@@ -54,52 +54,52 @@ func Printf(format string, v ...interface{}) {
 }
 func Println(v ...interface{}) {
 	if custom {
-		logger.Println(v...)
-	} else {
 		logger.Println(append(logPrefixSlice, v...)...)
+	} else {
+		logger.Println(v...)
 	}
 }
 
 func Fatal(v ...interface{}) {
 	if custom {
-		logger.Fatal(v...)
-	} else {
 		logger.Fatal(append(logPrefixSlice, v...)...)
+	} else {
+		logger.Fatal(v...)
 	}
 }
 func Fatalf(format string, v ...interface{}) {
 	if custom {
-		logger.Fatalf(format, v...)
-	} else {
 		logger.Fatalf(logPrefixStr+format, v...)
+	} else {
+		logger.Fatalf(format, v...)
 	}
 }
 func Fatalln(v ...interface{}) {
 	if custom {
-		logger.Fatalln(v...)
-	} else {
 		logger.Fatalln(append(logPrefixSlice, v...)...)
+	} else {
+		logger.Fatalln(v...)
 	}
 }
 
 func Panic(v ...interface{}) {
 	if custom {
-		logger.Panic(v...)
-	} else {
 		logger.Panic(append(logPrefixSlice, v...)...)
+	} else {
+		logger.Panic(v...)
 	}
 }
 func Panicf(format string, v ...interface{}) {
 	if custom {
-		logger.Panicf(format, v...)
-	} else {
 		logger.Panicf(logPrefixStr+format, v...)
+	} else {
+		logger.Panicf(format, v...)
 	}
 }
 func Panicln(v ...interface{}) {
 	if custom {
-		logger.Panicln(v...)
-	} else {
 		logger.Panicln(append(logPrefixSlice, v...)...)
+	} else {
+		logger.Panicln(v...)
 	}
 }
