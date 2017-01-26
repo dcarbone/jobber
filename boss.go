@@ -1,23 +1,8 @@
 package jobber
 
-/*
-	Copyright 2017 Daniel Carbone
-
-	Licensed under the Apache License, Version 2.0 (the "License");
-	you may not use this file except in compliance with the License.
-	You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-	Unless required by applicable law or agreed to in writing, software
-	distributed under the License is distributed on an "AS IS" BASIS,
-	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-	See the License for the specific language governing permissions and
-	limitations under the License.
-*/
-
 import (
 	"fmt"
+	"github.com/dcarbone/jobber/log"
 	"sync"
 )
 
@@ -63,7 +48,7 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 	// see if we're already got somebody doin' it
 	if b.HasWorker(name) {
 		if debug {
-			logger.Printf("Jobber: A worker for job \"%s\" already exists.\n", name)
+			log.Printf("A worker for job \"%s\" already exists.\n", name)
 		}
 		return fmt.Errorf("A worker for job \"%s\" already exists.", name)
 	}
@@ -72,8 +57,8 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 	if 0 > queueLength {
 		// shout
 		if debug {
-			logger.Printf(
-				"Jobber: Incoming new worker \"%s\" request specified invalid queue length of \"%d\","+
+			log.Printf(
+				"Incoming new worker \"%s\" request specified invalid queue length of \"%d\","+
 					" will set length to \"0\"\n",
 				name,
 				queueLength)
@@ -83,8 +68,8 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 	}
 
 	// tell the world
-	logger.Printf(
-		"Jobber: Creating new worker for job with name \"%s\" and queue length of \"%d\"\n",
+	log.Printf(
+		"Creating new worker for job with name \"%s\" and queue length of \"%d\"\n",
 		name,
 		queueLength)
 
@@ -100,7 +85,7 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 
 	// maybe say so?
 	if debug {
-		logger.Printf("Jobber: Go routine started for job \"%s\"\n", name)
+		log.Printf("Go routine started for job \"%s\"\n", name)
 	}
 
 	return nil
@@ -111,7 +96,7 @@ func (b *Boss) AddJob(workerName string, j Job) error {
 	// see if we've already hired this worker
 	if false == b.HasWorker(workerName) {
 		if debug {
-			logger.Printf("Jobber: No worker with \"%s\" found.\n", workerName)
+			log.Printf("No worker with \"%s\" found.\n", workerName)
 		}
 		return fmt.Errorf("No worker with name \"%s\" found", workerName)
 	}
@@ -133,7 +118,7 @@ func (b *Boss) NewUnbufferedWorker(name string) error {
 func (b *Boss) StopWorker(workerName string) error {
 	if false == b.HasWorker(workerName) {
 		if debug {
-			logger.Printf("Jobber: No worker named \"%s\" found, cannot tell them to stop.", workerName)
+			log.Printf("No worker named \"%s\" found, cannot tell them to stop.", workerName)
 		}
 		return fmt.Errorf("No worker named \"%s\" found, cannot tell them to stop.", workerName)
 	}
@@ -154,7 +139,7 @@ func (b *Boss) exitInterview() {
 	for {
 		select {
 		case w := <-b.hr:
-			logger.Printf("Jobber: Worker \"%s\" has completed all queued tasks.  They completed"+
+			log.Printf("Worker \"%s\" has completed all queued tasks.  They completed"+
 				"\"%d\" jobs all told. Goodbye, \"%s\"...\n",
 				w.name,
 				w.completed,

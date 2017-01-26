@@ -1,23 +1,8 @@
 package jobber
 
-/*
-	Copyright 2017 Daniel Carbone
-
-	Licensed under the Apache License, Version 2.0 (the "License");
-	you may not use this file except in compliance with the License.
-	You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-	Unless required by applicable law or agreed to in writing, software
-	distributed under the License is distributed on an "AS IS" BASIS,
-	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-	See the License for the specific language governing permissions and
-	limitations under the License.
-*/
-
 import (
 	"fmt"
+	"github.com/dcarbone/jobber/log"
 	"sync"
 	"time"
 )
@@ -52,14 +37,14 @@ func (w *worker) doWork() {
 			// Only track time to completion if they've enabled debug mode.
 			if debug {
 				start = time.Now()
-				logger.Printf("Jobber: Processing \"%s\" job \"%d\"...\n", w.name, w.completed)
+				log.Printf("Processing \"%s\" job \"%d\"...\n", w.name, w.completed)
 			}
 			// process job from queue
 			j.RespondTo() <- j.Process()
 			// if debugging, print duration stats
 			if debug {
-				logger.Printf(
-					"Jobber: \"%s\" job \"%d\" took \"%d\" nanoseconds to complete.\n",
+				log.Printf(
+					"\"%s\" job \"%d\" took \"%d\" nanoseconds to complete.\n",
 					w.name,
 					w.completed,
 					time.Now().Sub(start).Nanoseconds())
@@ -80,11 +65,11 @@ func (w *worker) doWork() {
 // addJob appends this worker's queue with the incoming job
 func (w *worker) addJob(j Job) error {
 	if w.stopping {
-		logger.Printf("Jobber: Worker \"%s\" has been told to stop, cannot add new jobs.\n", w.name)
+		log.Printf("Worker \"%s\" has been told to stop, cannot add new jobs.\n", w.name)
 		return fmt.Errorf("Worker \"%s\" has been told to stop, cannot add new jobs.", w.name)
 	}
 	if debug {
-		logger.Printf("Jobber: Adding job \"%d\" to \"%s\" queue...", w.added, w.name)
+		log.Printf("Adding job \"%d\" to \"%s\" queue...", w.added, w.name)
 	}
 	w.jobs <- j
 	w.added++
@@ -95,7 +80,7 @@ func (w *worker) addJob(j Job) error {
 func (w *worker) stop(hr chan *worker) error {
 	// if i've already been told to stop..
 	if w.stopping {
-		logger.Printf("Jobber: Worker \"%s\" has already been told to stop.", w.name)
+		log.Printf("Worker \"%s\" has already been told to stop.", w.name)
 		return fmt.Errorf("Worker \"%s\" has already been told to stop.", w.name)
 	}
 
@@ -108,7 +93,7 @@ func (w *worker) stop(hr chan *worker) error {
 	w.hr = hr
 
 	// tell the world
-	logger.Printf("Jobber: Stopping worker \"%s\"...\n", w.name)
+	log.Printf("Stopping worker \"%s\"...\n", w.name)
 
 	return nil
 }
