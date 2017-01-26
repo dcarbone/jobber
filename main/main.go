@@ -34,9 +34,9 @@ func main() {
 	for {
 		select {
 		case err := <-respChan:
-			fmt.Printf("Received \"%v\" from response channel\n", err)
+			fmt.Printf("Received \"%v\" from response channel", err)
 		case sig := <-sigChan:
-			fmt.Printf("Received \"%s\", stopping...\n", sig)
+			fmt.Printf("Received \"%s\", stopping...", sig)
 			boss.StopWorker("bob")
 			boss.StopWorker("jim")
 			return

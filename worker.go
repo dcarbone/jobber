@@ -37,14 +37,14 @@ func (w *worker) doWork() {
 			// Only track time to completion if they've enabled debug mode.
 			if debug {
 				start = time.Now()
-				log.Printf("Processing \"%s\" job \"%d\"...\n", w.name, w.completed)
+				log.Printf("Processing \"%s\" job \"%d\"...", w.name, w.completed)
 			}
 			// process job from queue
 			j.RespondTo() <- j.Process()
 			// if debugging, print duration stats
 			if debug {
 				log.Printf(
-					"\"%s\" job \"%d\" took \"%d\" nanoseconds to complete.\n",
+					"\"%s\" job \"%d\" took \"%d\" nanoseconds to complete.",
 					w.name,
 					w.completed,
 					time.Now().Sub(start).Nanoseconds())
@@ -65,7 +65,7 @@ func (w *worker) doWork() {
 // addJob appends this worker's queue with the incoming job
 func (w *worker) addJob(j Job) error {
 	if w.stopping {
-		log.Printf("Worker \"%s\" has been told to stop, cannot add new jobs.\n", w.name)
+		log.Printf("Worker \"%s\" has been told to stop, cannot add new jobs.", w.name)
 		return fmt.Errorf("Worker \"%s\" has been told to stop, cannot add new jobs.", w.name)
 	}
 	if debug {
@@ -93,7 +93,7 @@ func (w *worker) stop(hr chan *worker) error {
 	w.hr = hr
 
 	// tell the world
-	log.Printf("Stopping worker \"%s\"...\n", w.name)
+	log.Printf("Stopping worker \"%s\"...", w.name)
 
 	return nil
 }

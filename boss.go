@@ -48,7 +48,7 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 	// see if we're already got somebody doin' it
 	if b.HasWorker(name) {
 		if debug {
-			log.Printf("A worker for job \"%s\" already exists.\n", name)
+			log.Printf("A worker for job \"%s\" already exists.", name)
 		}
 		return fmt.Errorf("A worker for job \"%s\" already exists.", name)
 	}
@@ -59,7 +59,7 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 		if debug {
 			log.Printf(
 				"Incoming new worker \"%s\" request specified invalid queue length of \"%d\","+
-					" will set length to \"0\"\n",
+					" will set length to \"0\"",
 				name,
 				queueLength)
 		}
@@ -69,7 +69,7 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 
 	// tell the world
 	log.Printf(
-		"Creating new worker for job with name \"%s\" and queue length of \"%d\"\n",
+		"Creating new worker for job with name \"%s\" and queue length of \"%d\"",
 		name,
 		queueLength)
 
@@ -85,7 +85,7 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 
 	// maybe say so?
 	if debug {
-		log.Printf("Go routine started for job \"%s\"\n", name)
+		log.Printf("Go routine started for job \"%s\"", name)
 	}
 
 	return nil
@@ -96,7 +96,7 @@ func (b *Boss) AddJob(workerName string, j Job) error {
 	// see if we've already hired this worker
 	if false == b.HasWorker(workerName) {
 		if debug {
-			log.Printf("No worker with \"%s\" found.\n", workerName)
+			log.Printf("No worker with \"%s\" found.", workerName)
 		}
 		return fmt.Errorf("No worker with name \"%s\" found", workerName)
 	}
@@ -140,7 +140,7 @@ func (b *Boss) exitInterview() {
 		select {
 		case w := <-b.hr:
 			log.Printf("Worker \"%s\" has completed all queued tasks.  They completed"+
-				"\"%d\" jobs all told. Goodbye, \"%s\"...\n",
+				"\"%d\" jobs all told. Goodbye, \"%s\"...",
 				w.name,
 				w.completed,
 				w.name)
