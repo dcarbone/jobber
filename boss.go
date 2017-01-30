@@ -91,24 +91,6 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 	return nil
 }
 
-// AddWork will push a new job to the end of a worker's queue
-func (b *Boss) AddJob(workerName string, j Job) error {
-	// see if we've already hired this worker
-	if false == b.HasWorker(workerName) {
-		if debug {
-			log.Printf("No worker with \"%s\" found.", workerName)
-		}
-		return fmt.Errorf("No worker with name \"%s\" found", workerName)
-	}
-
-	// lock boss down
-	b.RLock()
-	defer b.RUnlock()
-
-	// add to worker queue
-	return b.workers[workerName].addJob(j)
-}
-
 // NewUnbufferedWorker will attempt to create a new worker with a queue length of 0
 func (b *Boss) NewUnbufferedWorker(name string) error {
 	return b.NewWorker(name, 0)
@@ -134,19 +116,35 @@ func (b *Boss) StopWorker(workerName string) error {
 	return nil
 }
 
+// AddWork will push a new job to the end of a worker's queue
+func (b *Boss) AddJob(workerName string, j Job) error {
+	// see if we've already hired this worker
+	if false == b.HasWorker(workerName) {
+		if debug {
+			log.Printf("No worker with \"%s\" found.", workerName)
+		}
+		return fmt.Errorf("No worker with name \"%s\" found", workerName)
+	}
+
+	// lock boss down
+	b.RLock()
+	defer b.RUnlock()
+
+	// add to worker queue
+	return b.workers[workerName].addJob(j)
+}
+
 // exitInterview processes workers coming in to hr
 func (b *Boss) exitInterview() {
 	for {
-		select {
-		case w := <-b.hr:
-			log.Printf("Worker \"%s\" has completed all queued tasks.  They completed"+
-				"\"%d\" jobs all told. Goodbye, \"%s\"...",
-				w.name,
-				w.completed,
-				w.name)
-			b.Lock()
-			delete(b.workers, w.name)
-			b.Unlock()
-		}
+		w := <-b.hr
+		log.Printf("Worker \"%s\" has completed all queued tasks.  They completed"+
+			" \"%d\" jobs all told. Goodbye, \"%s\"...",
+			w.name,
+			w.completed,
+			w.name)
+		b.Lock()
+		delete(b.workers, w.name)
+		b.Unlock()
 	}
 }

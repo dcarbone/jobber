@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 type importantJob struct {
@@ -34,11 +33,9 @@ func main() {
 	for {
 		select {
 		case err := <-respChan:
-			fmt.Printf("Received \"%v\" from response channel", err)
+			fmt.Println(fmt.Sprintf("Received \"%v\" from response channel", err))
 		case sig := <-sigChan:
-			fmt.Printf("Received \"%s\", stopping...", sig)
-			boss.StopWorker("bob")
-			boss.StopWorker("jim")
+			fmt.Println(fmt.Sprintf("Received \"%s\", stopping...", sig))
 			return
 		}
 	}
@@ -53,22 +50,17 @@ func (j *importantJob) RespondTo() chan error {
 	return j.respondTo
 }
 
-func bob(boss *jobber.Boss, respondTo chan error) {
-	t := time.NewTicker(1 * time.Second)
-	for {
-		select {
-		case <-t.C:
-			boss.AddJob("bob", &importantJob{respondTo: respondTo})
-		}
+func bob(b *jobber.Boss, respondTo chan error) {
+	for i := 0; i < 5; i++ {
+		b.AddJob("bob", &importantJob{respondTo: respondTo})
 	}
+	b.StopWorker("bob")
 }
 
-func jim(boss *jobber.Boss, respondTo chan error) {
-	t := time.NewTicker(2 * time.Second)
-	for {
-		select {
-		case <-t.C:
-			boss.AddJob("jim", &importantJob{respondTo: respondTo})
-		}
+func jim(b *jobber.Boss, respondTo chan error) {
+	for i := 0; i < 5; i++ {
+		b.AddJob("jim", &importantJob{respondTo: respondTo})
 	}
+
+	b.StopWorker("jim")
 }
