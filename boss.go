@@ -8,7 +8,7 @@ import (
 
 // Boss controls the life of the workers
 type Boss struct {
-	*sync.RWMutex
+	m *sync.RWMutex
 
 	workers map[string]*worker
 	hr      chan *worker
@@ -18,7 +18,7 @@ type Boss struct {
 func NewBoss() *Boss {
 	// initialize boss
 	b := &Boss{
-		RWMutex: &sync.RWMutex{},
+		m: &sync.RWMutex{},
 
 		workers: make(map[string]*worker),
 		hr:      make(chan *worker, 100),
@@ -32,8 +32,8 @@ func NewBoss() *Boss {
 
 // HasWorker lets you know if a worker already exists for a job
 func (b *Boss) HasWorker(name string) bool {
-	b.RLock()
-	defer b.RUnlock()
+	b.m.RLock()
+	defer b.m.RUnlock()
 
 	// do we have this person?
 	if _, ok := b.workers[name]; ok {
@@ -74,8 +74,8 @@ func (b *Boss) NewWorker(name string, queueLength int) error {
 		queueLength)
 
 	// lock boss down
-	b.Lock()
-	defer b.Unlock()
+	b.m.Lock()
+	defer b.m.Unlock()
 
 	// add worker
 	b.workers[name] = newWorker(name, queueLength)
@@ -105,15 +105,10 @@ func (b *Boss) StopWorker(workerName string) error {
 		return fmt.Errorf("No worker named \"%s\" found, cannot tell them to stop.", workerName)
 	}
 
-	b.RLock()
-	defer b.RUnlock()
+	b.m.RLock()
+	defer b.m.RUnlock()
 
-	err := b.workers[workerName].stop(b.hr)
-	if nil != err {
-		return err
-	}
-
-	return nil
+	return b.workers[workerName].stop(b.hr)
 }
 
 // AddWork will push a new job to the end of a worker's queue
@@ -127,8 +122,8 @@ func (b *Boss) AddJob(workerName string, j Job) error {
 	}
 
 	// lock boss down
-	b.RLock()
-	defer b.RUnlock()
+	b.m.RLock()
+	defer b.m.RUnlock()
 
 	// add to worker queue
 	return b.workers[workerName].addJob(j)
@@ -143,8 +138,8 @@ func (b *Boss) exitInterview() {
 			w.name,
 			w.completed,
 			w.name)
-		b.Lock()
+		b.m.Lock()
 		delete(b.workers, w.name)
-		b.Unlock()
+		b.m.Unlock()
 	}
 }
