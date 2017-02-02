@@ -19,7 +19,13 @@ type StdLogger interface {
 	Panicln(v ...interface{})
 }
 
-const logPrefixStr = "[jobber] "
+const (
+	// used in non-format functions
+	logPrefixStr = "[jobber]"
+
+	// used in format functions
+	logPrefixSpaceStr = "[jobber] "
+)
 
 var logPrefixSlice []interface{}
 
@@ -47,7 +53,7 @@ func Print(v ...interface{}) {
 }
 func Printf(format string, v ...interface{}) {
 	if custom {
-		logger.Printf(logPrefixStr+format, v...)
+		logger.Printf(logPrefixSpaceStr+format, v...)
 	} else {
 		logger.Printf(format, v...)
 	}
@@ -69,7 +75,7 @@ func Fatal(v ...interface{}) {
 }
 func Fatalf(format string, v ...interface{}) {
 	if custom {
-		logger.Fatalf(logPrefixStr+format, v...)
+		logger.Fatalf(logPrefixSpaceStr+format, v...)
 	} else {
 		logger.Fatalf(format, v...)
 	}
@@ -91,7 +97,7 @@ func Panic(v ...interface{}) {
 }
 func Panicf(format string, v ...interface{}) {
 	if custom {
-		logger.Panicf(logPrefixStr+format, v...)
+		logger.Panicf(logPrefixSpaceStr+format, v...)
 	} else {
 		logger.Panicf(format, v...)
 	}
