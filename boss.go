@@ -14,7 +14,7 @@ type Boss struct {
 	hr      chan *worker
 }
 
-// New creates a Boss
+// NewBoss creates a Boss
 func NewBoss() *Boss {
 	// initialize boss
 	b := &Boss{
