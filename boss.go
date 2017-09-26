@@ -1,89 +1,99 @@
 package jobber
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/dcarbone/jobber/log"
 	"sync"
 )
 
 // Boss controls the life of the workers
 type Boss struct {
-	m *sync.RWMutex
-
-	workers map[string]*worker
-	hr      chan *worker
+	mu         *sync.Mutex
+	shutdowned bool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	term       chan struct{}
+	workers    map[string]*worker
+	wg         *sync.WaitGroup
+	hr         chan *worker
 }
 
-// NewBoss creates a Boss
 func NewBoss() *Boss {
-	// initialize boss
-	b := &Boss{
-		m: &sync.RWMutex{},
+	return newBoss(context.Background())
+}
 
+func NewBossWithContext(ctx context.Context) *Boss {
+	return newBoss(ctx)
+}
+
+func newBoss(ctx context.Context) *Boss {
+	b := &Boss{
+		mu:      &sync.Mutex{},
 		workers: make(map[string]*worker),
 		hr:      make(chan *worker, 100),
+		wg:      new(sync.WaitGroup),
 	}
+	b.ctx, b.cancel = context.WithCancel(ctx)
 
-	// start up that hr team...
-	go b.exitInterview()
+	go b.runner()
 
 	return b
 }
 
+func (b *Boss) Terminate() {
+	if b.shutdowned {
+		return
+	}
+	close(b.term)
+	b.wg.Wait()
+}
+
+func (b *Boss) Shutdown() {
+	if b.shutdowned {
+		return
+	}
+	b.cancel()
+	b.wg.Wait()
+}
+
+func (b *Boss) Shutdowned() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.shutdowned
+}
+
 // HasWorker lets you know if a worker already exists for a job
 func (b *Boss) HasWorker(name string) bool {
-	b.m.RLock()
-	defer b.m.RUnlock()
-
-	// do we have this person?
-	if _, ok := b.workers[name]; ok {
-		return true
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shutdowned {
+		return false
 	}
-
-	return false
+	_, ok := b.workers[name]
+	return ok
 }
 
 // NewWorker will attempt to create a new worker for a job. Returns error if you've already hired somebody.
 func (b *Boss) NewWorker(name string, queueLength int) error {
-	// see if we're already got somebody doin' it
-	if b.HasWorker(name) {
-		if debug {
-			log.Printf("A worker for job \"%s\" already exists.", name)
-		}
-		return fmt.Errorf("A worker for job \"%s\" already exists.", name)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shutdowned {
+		return errors.New("boss is shutdowned")
 	}
-
-	// 'lil input sanitizing
+	if _, ok := b.workers[name]; ok {
+		return fmt.Errorf("a worker for job \"%s\" already exists", name)
+	}
 	if 0 > queueLength {
-		// shout
-		if debug {
-			log.Printf(
-				"Incoming new worker \"%s\" request specified invalid queue length of \"%d\","+
-					" will set length to \"0\"",
-				name,
-				queueLength)
-		}
-		// make unbuffered
 		queueLength = 0
 	}
 
-	// tell the world
-	log.Printf(
-		"Creating new worker for job with name \"%s\" and queue length of \"%d\"",
-		name,
-		queueLength)
+	log.Printf("Creating new worker \"%s\" with queue length of \"%d\"", name, queueLength)
 
-	// lock boss down
-	b.m.Lock()
-	defer b.m.Unlock()
-
-	// add worker
+	b.wg.Add(1)
 	b.workers[name] = newWorker(name, queueLength)
-
-	// start up work routine
 	go b.workers[name].doWork()
 
-	// maybe say so?
 	if debug {
 		log.Printf("Go routine started for job \"%s\"", name)
 	}
@@ -97,49 +107,80 @@ func (b *Boss) NewUnbufferedWorker(name string) error {
 }
 
 // StopWorker will tell a worker to finish up their queue then remove them
-func (b *Boss) StopWorker(workerName string) error {
-	if false == b.HasWorker(workerName) {
-		if debug {
-			log.Printf("No worker named \"%s\" found, cannot tell them to stop.", workerName)
-		}
-		return fmt.Errorf("No worker named \"%s\" found, cannot tell them to stop.", workerName)
+func (b *Boss) StopWorker(name string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shutdowned {
+		return errors.New("boss is shutdowned")
 	}
-
-	b.m.RLock()
-	defer b.m.RUnlock()
-
-	return b.workers[workerName].stop(b.hr)
+	if _, ok := b.workers[name]; ok {
+		b.workers[name].stop(b.hr)
+		return nil
+	}
+	return fmt.Errorf("worker named \"%s\" not found", name)
 }
 
 // AddWork will push a new job to the end of a worker's queue
-func (b *Boss) AddJob(workerName string, j Job) error {
-	// see if we've already hired this worker
-	if false == b.HasWorker(workerName) {
-		if debug {
-			log.Printf("No worker with \"%s\" found.", workerName)
-		}
-		return fmt.Errorf("No worker with name \"%s\" found", workerName)
+func (b *Boss) AddJob(name string, j Job) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shutdowned {
+		return errors.New("boss is shutdowned")
 	}
-
-	// lock boss down
-	b.m.RLock()
-	defer b.m.RUnlock()
-
-	// add to worker queue
-	return b.workers[workerName].addJob(j)
+	if _, ok := b.workers[name]; !ok {
+		return fmt.Errorf("no worker named \"%s\" found", name)
+	}
+	return b.workers[name].addJob(j)
 }
 
-// exitInterview processes workers coming in to hr
-func (b *Boss) exitInterview() {
+func (b *Boss) runner() {
+	var term bool
+
+Runner:
 	for {
-		w := <-b.hr
-		log.Printf("Worker \"%s\" has completed all queued tasks.  They completed"+
-			" \"%d\" jobs all told. Goodbye, \"%s\"...",
-			w.name,
-			w.completed,
-			w.name)
-		b.m.Lock()
-		delete(b.workers, w.name)
-		b.m.Unlock()
+		select {
+		case <-b.term:
+			term = true
+			break Runner
+		case w := <-b.hr:
+			b.mu.Lock()
+			if debug {
+				log.Printf("Worker \"%s\" has completed all queued tasks.  They completed \"%d\" jobs all told. Goodbye, \"%s\"...",
+					w.name,
+					w.completed,
+					w.name)
+			} else {
+				log.Printf("Worker \"%s\" is closing", w.name)
+			}
+			delete(b.workers, w.name)
+			b.mu.Unlock()
+		case <-b.ctx.Done():
+			log.Printf("Context done: %s", b.ctx.Err())
+			break Runner
+		}
 	}
+
+	b.mu.Lock()
+	b.shutdowned = true
+	b.mu.Unlock()
+
+	if len(b.workers) > 0 {
+		for _, w := range b.workers {
+			if term {
+				w.terminate(b.hr)
+			} else {
+				w.stop(b.hr)
+			}
+		}
+	}
+
+	for w := range b.hr {
+		log.Printf("worker \"%s\" has stopped", w.name)
+		b.wg.Done()
+	}
+
+	close(b.hr)
+	b.workers = make(map[string]*worker)
+
+	b.Shutdown()
 }

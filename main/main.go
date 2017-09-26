@@ -30,10 +30,16 @@ func main() {
 	go bob(boss, respChan)
 	go jim(boss, respChan)
 
+	i := 0
 	for {
 		select {
 		case err := <-respChan:
 			fmt.Println(fmt.Sprintf("Received \"%v\" from response channel", err))
+			i++
+			if i >= 10 {
+				boss.Shutdown()
+				return
+			}
 		case sig := <-sigChan:
 			fmt.Println(fmt.Sprintf("Received \"%s\", stopping...", sig))
 			return
@@ -54,13 +60,10 @@ func bob(b *jobber.Boss, respondTo chan error) {
 	for i := 0; i < 5; i++ {
 		b.AddJob("bob", &importantJob{respondTo: respondTo})
 	}
-	b.StopWorker("bob")
 }
 
 func jim(b *jobber.Boss, respondTo chan error) {
 	for i := 0; i < 5; i++ {
 		b.AddJob("jim", &importantJob{respondTo: respondTo})
 	}
-
-	b.StopWorker("jim")
 }
