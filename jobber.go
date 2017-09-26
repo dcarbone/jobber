@@ -10,7 +10,7 @@ const logPrefixStr = "[jobber] "
 
 type (
 	Job interface {
-		RespondTo() chan error
+		RespondTo() chan<- error
 		Process() error
 	}
 	Logger interface {
