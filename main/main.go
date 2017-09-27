@@ -3,13 +3,38 @@ package main
 import (
 	"fmt"
 	"github.com/dcarbone/jobber"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
 type importantJob struct {
+	id        int
 	respondTo chan error
+}
+
+func (j *importantJob) Process() error {
+	log.Printf("Important job %d processing here!", j.id)
+	return nil
+}
+
+func (j *importantJob) RespondTo() chan<- error {
+	return j.respondTo
+}
+
+type lessImportantJob struct {
+	id        int
+	respondTo chan error
+}
+
+func (j *lessImportantJob) Process() error {
+	log.Printf("Less Important job %d processing here!", j.id)
+	return nil
+}
+
+func (j *lessImportantJob) RespondTo() chan<- error {
+	return j.respondTo
 }
 
 func main() {
@@ -18,25 +43,24 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	jobber.Debug()
-
 	boss := jobber.NewBoss()
 
-	boss.NewWorker("bob", 10)
-	boss.NewUnbufferedWorker("jim")
+	boss.HireWorker("bob", 10)
+	boss.HireWorker("jim", 0)
 
-	respChan := make(chan error, 10)
+	respChan := make(chan error, 20)
 
 	go bob(boss, respChan)
 	go jim(boss, respChan)
 
 	i := 0
+
 	for {
 		select {
 		case err := <-respChan:
 			fmt.Println(fmt.Sprintf("Received \"%v\" from response channel", err))
 			i++
-			if i >= 10 {
+			if i >= 20 {
 				boss.Shutdown()
 				return
 			}
@@ -47,23 +71,14 @@ func main() {
 	}
 }
 
-func (j *importantJob) Process() error {
-	fmt.Println("I'm important...")
-	return nil
-}
-
-func (j *importantJob) RespondTo() chan error {
-	return j.respondTo
-}
-
 func bob(b *jobber.Boss, respondTo chan error) {
-	for i := 0; i < 5; i++ {
-		b.AddJob("bob", &importantJob{respondTo: respondTo})
+	for i := 0; i < 10; i++ {
+		b.AddJob("bob", &lessImportantJob{id: i, respondTo: respondTo})
 	}
 }
 
 func jim(b *jobber.Boss, respondTo chan error) {
-	for i := 0; i < 5; i++ {
-		b.AddJob("jim", &importantJob{respondTo: respondTo})
+	for i := 0; i < 10; i++ {
+		b.AddJob("jim", &importantJob{id: i, respondTo: respondTo})
 	}
 }
