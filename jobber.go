@@ -24,6 +24,8 @@ type (
 	Worker interface {
 		// Name must return the name of worker.  This must be unique across all workers managed by the boss
 		Name() string
+		// Length must return the size of the current queue of work for this worker.
+		Length() int
 		// AddJob must attempt to add a new job to the worker's queue, failing if the worker has been told to stop
 		AddJob(Job) error
 		// ScaleDown must mark the worker as stopped, process any and all jobs remaining in it's queue, and then finally
@@ -72,6 +74,12 @@ func (w *PitDroid) AddJob(j Job) error {
 	}
 	w.jobs <- j
 	return nil
+}
+
+func (w *PitDroid) Length() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.jobs)
 }
 
 func (w *PitDroid) ScaleDown(hr HR) {
@@ -178,6 +186,20 @@ func (b *Boss) HasWorker(name string) bool {
 	}
 	_, ok := b.workers[name]
 	return ok
+}
+
+// Worker will attempt to return to you a worker by name
+func (b *Boss) Worker(name string) Worker {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shutdowned {
+		return nil
+	}
+	if w, ok := b.workers[name]; ok {
+		return w
+	} else {
+		return nil
+	}
 }
 
 // HireWorker will attempt to hire a new worker using the specified HiringAgency and add them to the job pool.
