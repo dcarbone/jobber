@@ -59,7 +59,7 @@ func NewPitDroid(name string, queueLength int) Worker {
 
 type HiringAgencyFunc func(name string, queueLength int) Worker
 
-// HiringAgency allows you to create your own worker hiring function in case you don't like Dan.
+// HiringAgency allows you to create your own worker hiring function in case you don't like PitDroids.
 var HiringAgency HiringAgencyFunc = NewPitDroid
 
 func (w *PitDroid) Name() string {
@@ -225,7 +225,7 @@ func (b *Boss) PlaceWorker(w Worker) error {
 	return nil
 }
 
-// AddWork will push a new job to a Worker's queue
+// AddWork will push a new job to a worker's queue
 func (b *Boss) AddJob(workerName string, j Job) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -252,7 +252,7 @@ func (b *Boss) ScaleDownWorker(name string) error {
 	return fmt.Errorf("worker named \"%s\" not found", name)
 }
 
-// TerminateWorker will remove the DefaultWorker immediately, effectively cancelling all queued work.
+// TerminateWorker will remove the worker immediately, effectively cancelling all queued work.
 func (b *Boss) TerminateWorker(name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
