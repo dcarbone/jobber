@@ -12,7 +12,7 @@ import (
 
 var (
 	jobnum        uint64
-	expectedError error = errors.New("i'm supposed to fail")
+	expectedError = errors.New("i'm supposed to fail")
 )
 
 func init() {
