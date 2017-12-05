@@ -7,7 +7,7 @@ A very basic example is provided in [main](main/main.go)
 
 # Overview
 
-At a high level, you create a single [Boss](jobber.go#L112), add named [Worker](jobber.go#L23)s to the Boss, and add 
+At a high level, you create a single [Boss](jobber.go#L121), add named [Worker](jobber.go#L24)s to the Boss, and add 
  [Job](jobber.go#L13)s to the Workers.
  
 ## Boss
@@ -17,7 +17,7 @@ The Boss is the central controller for any / all workers.  You can have as many 
 Worker is responsible for completing a specific type of work.  The general idea is that workers have a unique name 
 within a given Boss and they only do one type of job.  You can, of course, do whatever you want.
 
-The default Worker is called [PitDroid](jobber.go#L36) and can be used out of the box or as a prototype for your own
+The default Worker is called [PitDroid](jobber.go#L39) and can be used out of the box or as a prototype for your own
 worker implementation.
 
 ## Job
