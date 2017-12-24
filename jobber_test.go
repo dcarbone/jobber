@@ -21,26 +21,29 @@ func init() {
 
 type (
 	simpleJob struct {
-		id        uint64
-		resp      chan error
-		shouldErr bool
+		id          uint64
+		resp        chan error
+		shouldErr   bool
+		shouldPanic bool
 	}
 )
 
-func newSimpleJob(shouldErr bool) *simpleJob {
-	j := &simpleJob{resp: make(chan error), shouldErr: shouldErr}
+func newSimpleJob(shouldErr, shouldPanic bool) *simpleJob {
+	j := &simpleJob{resp: make(chan error), shouldErr: shouldErr, shouldPanic: shouldPanic}
 	j.id = atomic.AddUint64(&jobnum, 1)
 	return j
 }
 
 func (j *simpleJob) Process() error {
 	log.Printf("Job \"%d\" processing...", j.id)
+	if j.shouldPanic {
+		panic("all i did was try")
+	}
 	if j.shouldErr {
 		return expectedError
-	} else {
-		time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
-		return nil
 	}
+	time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
+	return nil
 }
 
 func (j *simpleJob) RespondTo() chan<- error {
@@ -77,7 +80,7 @@ func TestBoss_HasWorker(t *testing.T) {
 func TestBoss_AddJob(t *testing.T) {
 	b := newTestBoss(t)
 	hireDan(t, b)
-	j := newSimpleJob(false)
+	j := newSimpleJob(false, false)
 
 	t.Run("CannotAddJobToUnknownWorker", func(t *testing.T) {
 		err := b.AddJob("steve", j)
@@ -91,6 +94,33 @@ func TestBoss_AddJob(t *testing.T) {
 		err := b.AddJob("dan", j)
 		if err != nil {
 			t.Logf("Unexpected error: %s", err)
+			t.FailNow()
+		}
+	})
+}
+
+func TestWorker_PanicRecovery(t *testing.T) {
+	b := newTestBoss(t)
+	hireDan(t, b)
+	j := newSimpleJob(false, true)
+
+	t.Run("ShouldStayAlive", func(t *testing.T) {
+		err := b.AddJob("dan", j)
+		if err != nil {
+			t.Logf("AddJob() error: %s", err)
+			t.FailNow()
+		}
+
+		if !b.HasWorker("dan") {
+			t.Log("dan should still be around")
+			t.FailNow()
+		}
+	})
+
+	t.Run("CanStillFire", func(t *testing.T) {
+		b.Shutdown()
+		if b.HasWorker("dan") {
+			t.Log("dan should not be around, boss gone")
 			t.FailNow()
 		}
 	})
