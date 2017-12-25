@@ -41,6 +41,7 @@ type (
 		mu         sync.Mutex
 		name       string
 		jobs       chan Job
+		blocking   bool
 		terminated bool
 		stopping   bool
 		hr         HR
@@ -50,10 +51,11 @@ type (
 // NewPitDroid will return to you a new PitDroid, the default worker prototype for jobber
 func NewPitDroid(name string, queueLength int) Worker {
 	w := &PitDroid{
-		name: name,
-		jobs: make(chan Job, queueLength),
+		name:     name,
+		jobs:     make(chan Job, queueLength),
+		blocking: queueLength == 0,
 	}
-	go w.work()
+	go w.work(w.blocking)
 	return w
 }
 
@@ -69,6 +71,13 @@ func (w *PitDroid) Name() string {
 	return n
 }
 
+func (w *PitDroid) Length() int {
+	w.mu.Lock()
+	l := len(w.jobs)
+	w.mu.Unlock()
+	return l
+}
+
 func (w *PitDroid) AddJob(j Job) error {
 	w.mu.Lock()
 	if w.stopping {
@@ -78,13 +87,6 @@ func (w *PitDroid) AddJob(j Job) error {
 	w.jobs <- j
 	w.mu.Unlock()
 	return nil
-}
-
-func (w *PitDroid) Length() int {
-	w.mu.Lock()
-	l := len(w.jobs)
-	w.mu.Unlock()
-	return l
 }
 
 func (w *PitDroid) ScaleDown(hr HR) {
@@ -112,10 +114,9 @@ func (w *PitDroid) Terminate(hr HR) {
 	w.mu.Unlock()
 }
 
-func (w *PitDroid) work() {
+func (w *PitDroid) work(blocking bool) {
 	var terminated bool
 	var job Job
-	var err error
 
 	defer func(name string) {
 		if r := recover(); r != nil {
@@ -129,25 +130,43 @@ func (w *PitDroid) work() {
 				default:
 				}
 			}
-			go w.work() // only on panic recovery
+			go w.work(blocking) // only on panic recovery
 		} else {
 			w.hr <- w
 		}
 	}(w.name)
 
-	for job = range w.jobs {
-		w.mu.Lock()
-		terminated = w.terminated
-		w.mu.Unlock()
-		// TODO: Don't like this, find better way
-		if terminated {
-			err = errors.New("worker terminated")
-		} else {
-			err = job.Process()
+	if blocking {
+		for job = range w.jobs {
+			w.mu.Lock()
+			terminated = w.terminated
+			w.mu.Unlock()
+			// TODO: Don't like this, find better way
+			if terminated {
+				select {
+				case job.RespondTo() <- errors.New("worker terminated"): // try to respond, don't block whole worker if they aren't reading from queue or it's full.
+				default: // fall on floor
+				}
+			} else {
+				job.RespondTo() <- job.Process()
+			}
 		}
-		select {
-		case job.RespondTo() <- err:
-		default:
+	} else {
+		var err error
+		for job = range w.jobs {
+			w.mu.Lock()
+			terminated = w.terminated
+			w.mu.Unlock()
+			// TODO: Don't like this, find better way
+			if terminated {
+				err = errors.New("worker terminated")
+			} else {
+				err = job.Process()
+			}
+			select {
+			case job.RespondTo() <- err: // try to respond, don't block whole worker if they aren't reading from queue or it's full.
+			default: // fall on floor
+			}
 		}
 	}
 }
@@ -217,32 +236,35 @@ func (b *Boss) Shutdown() {
 // Shutdowned will return true if the boss has been told to shut down or terminate
 func (b *Boss) Shutdowned() bool {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.shutdowned
+	s := b.shutdowned
+	b.mu.Unlock()
+	return s
 }
 
 func (b *Boss) HasWorker(name string) bool {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.shutdowned {
+		b.mu.Unlock()
 		return false
 	}
 	_, ok := b.workers[name]
+	b.mu.Unlock()
 	return ok
 }
 
 // Worker will attempt to return to you a worker by name
-func (b *Boss) Worker(name string) Worker {
+func (b *Boss) Worker(name string) (w Worker) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.shutdowned {
+		b.mu.Unlock()
 		return nil
 	}
 	if w, ok := b.workers[name]; ok {
+		b.mu.Unlock()
 		return w
-	} else {
-		return nil
 	}
+	b.mu.Unlock()
+	return nil
 }
 
 // HireWorker will attempt to hire a new worker using the specified HiringAgency and add them to the job pool.

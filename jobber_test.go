@@ -54,8 +54,14 @@ func newTestBoss(_ *testing.T) *jobber.Boss {
 	return jobber.NewBoss()
 }
 
-func hireDan(t *testing.T, b *jobber.Boss) {
-	err := b.HireWorker("dan", 50)
+func hireDan(t *testing.T, b *jobber.Boss, blocking bool) {
+	var err error
+	if blocking {
+		err = b.HireWorker("dan", 0)
+	} else {
+		err = b.HireWorker("dan", 50)
+	}
+
 	if err != nil {
 		t.Logf("Unable to hire worker: %s", err)
 		t.FailNow()
@@ -64,12 +70,12 @@ func hireDan(t *testing.T, b *jobber.Boss) {
 
 func TestBoss_HireWorker(t *testing.T) {
 	b := newTestBoss(t)
-	hireDan(t, b)
+	hireDan(t, b, false)
 }
 
 func TestBoss_HasWorker(t *testing.T) {
 	b := newTestBoss(t)
-	hireDan(t, b)
+	hireDan(t, b, false)
 	hw := b.HasWorker("dan")
 	if !hw {
 		t.Log("Boss does not know about worker dan")
@@ -79,7 +85,7 @@ func TestBoss_HasWorker(t *testing.T) {
 
 func TestBoss_AddJob(t *testing.T) {
 	b := newTestBoss(t)
-	hireDan(t, b)
+	hireDan(t, b, false)
 	j := newSimpleJob(false, false)
 
 	t.Run("CannotAddJobToUnknownWorker", func(t *testing.T) {
@@ -101,7 +107,7 @@ func TestBoss_AddJob(t *testing.T) {
 
 func TestWorker_PanicRecovery(t *testing.T) {
 	b := newTestBoss(t)
-	hireDan(t, b)
+	hireDan(t, b, false)
 	j := newSimpleJob(false, true)
 
 	t.Run("ShouldStayAlive", func(t *testing.T) {
