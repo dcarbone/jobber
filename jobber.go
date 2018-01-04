@@ -76,39 +76,35 @@ func (w *PitDroid) Length() int {
 	return l
 }
 
-func (w *PitDroid) AddJob(j Job) error {
+func (w *PitDroid) AddJob(j Job) (err error) {
 	w.mu.Lock()
 	if w.stopping {
-		w.mu.Unlock()
-		return fmt.Errorf("worker \"%s\" has been told to stop, cannot add new jobs", w.name)
+		err = fmt.Errorf("worker \"%s\" has been told to stop, cannot add new jobs", w.name)
+	} else {
+		w.jobs <- j
 	}
-	w.jobs <- j
 	w.mu.Unlock()
-	return nil
+	return
 }
 
 func (w *PitDroid) ScaleDown(hr HR) {
 	w.mu.Lock()
-	if w.stopping {
-		w.mu.Unlock()
-		return
+	if !w.stopping {
+		w.stopping = true
+		w.hr = hr
+		close(w.jobs)
 	}
-	w.stopping = true
-	w.hr = hr
-	close(w.jobs)
 	w.mu.Unlock()
 }
 
 func (w *PitDroid) Terminate(hr HR) {
 	w.mu.Lock()
-	if w.stopping {
-		w.mu.Unlock()
-		return
+	if !w.stopping {
+		w.terminated = true
+		w.stopping = true
+		w.hr = hr
+		close(w.jobs)
 	}
-	w.terminated = true
-	w.stopping = true
-	w.hr = hr
-	close(w.jobs)
 	w.mu.Unlock()
 }
 
@@ -185,29 +181,25 @@ func newBoss(ctx context.Context) *Boss {
 	return b
 }
 
-// Terminate will immediately fire all workers and shut down the boss
-func (b *Boss) Terminate() {
+// Shutdown will attempt to gracefully shutdown, completing all currently queued jobs but no longer accepting new ones
+func (b *Boss) Shutdown() {
 	b.mu.Lock()
-	if b.shutdowned {
-		b.mu.Unlock()
-		return
+	if !b.shutdowned {
+		b.shutdowned = true
+		b.cancel()
 	}
-	b.shutdowned = true
-	b.terminated = true
-	b.cancel()
 	b.mu.Unlock()
 	b.wg.Wait()
 }
 
-// Shutdown will attempt to gracefully shutdown, completing all currently queued jobs but no longer accepting new ones
-func (b *Boss) Shutdown() {
+// Terminate will immediately fire all workers and shut down the boss
+func (b *Boss) Terminate() {
 	b.mu.Lock()
-	if b.shutdowned {
-		b.mu.Unlock()
-		return
+	if !b.shutdowned {
+		b.shutdowned = true
+		b.terminated = true
+		b.cancel()
 	}
-	b.shutdowned = true
-	b.cancel()
 	b.mu.Unlock()
 	b.wg.Wait()
 }
@@ -232,18 +224,13 @@ func (b *Boss) HasWorker(name string) bool {
 }
 
 // Worker will attempt to return to you a worker by name
-func (b *Boss) Worker(name string) (w Worker) {
+func (b *Boss) Worker(name string) (worker Worker) {
 	b.mu.Lock()
-	if b.shutdowned {
-		b.mu.Unlock()
-		return nil
-	}
-	if w, ok := b.workers[name]; ok {
-		b.mu.Unlock()
-		return w
+	if !b.shutdowned {
+		worker = b.workers[name]
 	}
 	b.mu.Unlock()
-	return nil
+	return
 }
 
 // HireWorker will attempt to hire a new worker using the specified HiringAgency and add them to the job pool.
@@ -255,69 +242,56 @@ func (b *Boss) HireWorker(name string, queueLength int) error {
 }
 
 // PlaceWorker will attempt to add a hired worker to the job pool, if one doesn't already exist with that name
-func (b *Boss) PlaceWorker(w Worker) error {
+func (b *Boss) PlaceWorker(worker Worker) (err error) {
 	b.mu.Lock()
 	if b.shutdowned {
-		b.mu.Unlock()
-		return errors.New("boss is shutdowned")
+		err = errors.New("boss is shutdowned")
+	} else if _, ok := b.workers[worker.Name()]; ok {
+		err = fmt.Errorf("a worker for job \"%s\" already exists", worker.Name())
+	} else {
+		b.wg.Add(1)
+		b.workers[worker.Name()] = worker
 	}
-	if _, ok := b.workers[w.Name()]; ok {
-		b.mu.Unlock()
-		return fmt.Errorf("a worker for job \"%s\" already exists", w.Name())
-	}
-	b.wg.Add(1)
-	b.workers[w.Name()] = w
 	b.mu.Unlock()
-	return nil
+	return
 }
 
 // AddWork will push a new job to a worker's queue
-func (b *Boss) AddJob(workerName string, j Job) error {
+func (b *Boss) AddJob(workerName string, j Job) (err error) {
 	b.mu.Lock()
 	if b.shutdowned {
-		b.mu.Unlock()
-		return errors.New("boss is shutdowned")
+		err = errors.New("boss is shutdowned")
+	} else if worker, ok := b.workers[workerName]; !ok {
+		err = fmt.Errorf("no worker named \"%s\" found", workerName)
+	} else {
+		err = worker.AddJob(j)
 	}
-	if _, ok := b.workers[workerName]; !ok {
-		b.mu.Unlock()
-		return fmt.Errorf("no worker named \"%s\" found", workerName)
-	}
-
-	err := b.workers[workerName].AddJob(j)
 	b.mu.Unlock()
-	return err
+	return
 }
 
 // ScaleDownWorker will tell a worker to finish up their queue then remove them
-func (b *Boss) ScaleDownWorker(name string) error {
+func (b *Boss) ScaleDownWorker(workerName string) (err error) {
 	b.mu.Lock()
 	if b.shutdowned {
-		b.mu.Unlock()
-		return errors.New("boss is shutdowned")
-	}
-	if _, ok := b.workers[name]; ok {
-		b.workers[name].ScaleDown(b.hr)
-		b.mu.Unlock()
-		return nil
+		err = errors.New("boss is shutdowned")
+	} else if worker, ok := b.workers[workerName]; ok {
+		worker.ScaleDown(b.hr)
 	}
 	b.mu.Unlock()
-	return fmt.Errorf("worker named \"%s\" not found", name)
+	return
 }
 
 // TerminateWorker will remove the worker immediately, effectively cancelling all queued work.
-func (b *Boss) TerminateWorker(name string) error {
+func (b *Boss) TerminateWorker(workerName string) (err error) {
 	b.mu.Lock()
 	if b.shutdowned {
-		b.mu.Unlock()
-		return errors.New("boss is shutdowned")
-	}
-	if _, ok := b.workers[name]; ok {
-		b.workers[name].Terminate(b.hr)
-		b.mu.Unlock()
-		return nil
+		err = errors.New("boss is shutdowned")
+	} else if worker, ok := b.workers[workerName]; ok {
+		worker.Terminate(b.hr)
 	}
 	b.mu.Unlock()
-	return fmt.Errorf("worker named \"%s\" not found", name)
+	return
 }
 
 func (b *Boss) runner() {
