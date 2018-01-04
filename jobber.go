@@ -41,7 +41,6 @@ type (
 		mu         sync.Mutex
 		name       string
 		jobs       chan Job
-		blocking   bool
 		terminated bool
 		stopping   bool
 		hr         HR
@@ -51,11 +50,10 @@ type (
 // NewPitDroid will return to you a new PitDroid, the default worker prototype for jobber
 func NewPitDroid(name string, queueLength int) Worker {
 	w := &PitDroid{
-		name:     name,
-		jobs:     make(chan Job, queueLength),
-		blocking: queueLength == 0,
+		name: name,
+		jobs: make(chan Job, queueLength),
 	}
-	go w.work(w.blocking)
+	go w.work()
 	return w
 }
 
@@ -114,7 +112,7 @@ func (w *PitDroid) Terminate(hr HR) {
 	w.mu.Unlock()
 }
 
-func (w *PitDroid) work(blocking bool) {
+func (w *PitDroid) work() {
 	var terminated bool
 	var job Job
 
@@ -130,43 +128,24 @@ func (w *PitDroid) work(blocking bool) {
 				default:
 				}
 			}
-			go w.work(blocking) // only on panic recovery
+			go w.work() // only on panic recovery
 		} else {
 			w.hr <- w
 		}
 	}(w.name)
 
-	if blocking {
-		for job = range w.jobs {
-			w.mu.Lock()
-			terminated = w.terminated
-			w.mu.Unlock()
-			// TODO: Don't like this, find better way
-			if terminated {
-				select {
-				case job.RespondTo() <- errors.New("worker terminated"): // try to respond, don't block whole worker if they aren't reading from queue or it's full.
-				default: // fall on floor
-				}
-			} else {
-				job.RespondTo() <- job.Process()
-			}
-		}
-	} else {
-		var err error
-		for job = range w.jobs {
-			w.mu.Lock()
-			terminated = w.terminated
-			w.mu.Unlock()
-			// TODO: Don't like this, find better way
-			if terminated {
-				err = errors.New("worker terminated")
-			} else {
-				err = job.Process()
-			}
+	for job = range w.jobs {
+		w.mu.Lock()
+		terminated = w.terminated
+		w.mu.Unlock()
+		// TODO: Don't like this, find better way
+		if terminated {
 			select {
-			case job.RespondTo() <- err: // try to respond, don't block whole worker if they aren't reading from queue or it's full.
+			case job.RespondTo() <- errors.New("worker terminated"): // try to respond, don't block whole worker if they aren't reading from queue or it's full.
 			default: // fall on floor
 			}
+		} else {
+			job.RespondTo() <- job.Process()
 		}
 	}
 }
