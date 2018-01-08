@@ -9,7 +9,7 @@ import (
 )
 
 type (
-	// Job represents any unit of work that you'd like to task a DefaultWorker with.  Any context handling should be done in your
+	// Job represents any unit of work that you'd like to task a Worker with.  Any context handling should be done in your
 	// Process() implementation.
 	Job interface {
 		// Process must contain whatever logic is needed to perform the job, returning whatever error is generated while
