@@ -38,7 +38,7 @@ type (
 
 	// PitDroids are simple workers that will do as instructed.
 	PitDroid struct {
-		mu         sync.Mutex
+		mu         sync.RWMutex
 		name       string
 		jobs       chan Job
 		terminated bool
@@ -63,27 +63,27 @@ type HiringAgencyFunc func(name string, queueLength int) Worker
 var HiringAgency HiringAgencyFunc = NewPitDroid
 
 func (w *PitDroid) Name() string {
-	w.mu.Lock()
+	w.mu.RLock()
 	n := w.name
-	w.mu.Unlock()
+	w.mu.RUnlock()
 	return n
 }
 
 func (w *PitDroid) Length() int {
-	w.mu.Lock()
+	w.mu.RLock()
 	l := len(w.jobs)
-	w.mu.Unlock()
+	w.mu.RUnlock()
 	return l
 }
 
 func (w *PitDroid) AddJob(j Job) (err error) {
-	w.mu.Lock()
+	w.mu.RLock()
 	if w.stopping {
 		err = fmt.Errorf("worker \"%s\" has been told to stop, cannot add new jobs", w.name)
 	} else {
 		w.jobs <- j
 	}
-	w.mu.Unlock()
+	w.mu.RUnlock()
 	return
 }
 
@@ -148,7 +148,7 @@ func (w *PitDroid) work() {
 
 // Boss controls the life of the workers
 type Boss struct {
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	terminated bool
 	shutdowned bool
 	ctx        context.Context
@@ -206,30 +206,30 @@ func (b *Boss) Terminate() {
 
 // Shutdowned will return true if the boss has been told to shut down or terminate
 func (b *Boss) Shutdowned() bool {
-	b.mu.Lock()
+	b.mu.RLock()
 	s := b.shutdowned
-	b.mu.Unlock()
+	b.mu.RUnlock()
 	return s
 }
 
 func (b *Boss) HasWorker(name string) bool {
-	b.mu.Lock()
+	b.mu.RLock()
 	if b.shutdowned {
-		b.mu.Unlock()
+		b.mu.RUnlock()
 		return false
 	}
 	_, ok := b.workers[name]
-	b.mu.Unlock()
+	b.mu.RUnlock()
 	return ok
 }
 
 // Worker will attempt to return to you a worker by name
 func (b *Boss) Worker(name string) (worker Worker) {
-	b.mu.Lock()
+	b.mu.RLock()
 	if !b.shutdowned {
 		worker = b.workers[name]
 	}
-	b.mu.Unlock()
+	b.mu.RUnlock()
 	return
 }
 
@@ -258,7 +258,7 @@ func (b *Boss) PlaceWorker(worker Worker) (err error) {
 
 // AddWork will push a new job to a worker's queue
 func (b *Boss) AddJob(workerName string, j Job) (err error) {
-	b.mu.Lock()
+	b.mu.RLock()
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; !ok {
@@ -266,31 +266,31 @@ func (b *Boss) AddJob(workerName string, j Job) (err error) {
 	} else {
 		err = worker.AddJob(j)
 	}
-	b.mu.Unlock()
+	b.mu.RUnlock()
 	return
 }
 
 // ScaleDownWorker will tell a worker to finish up their queue then remove them
 func (b *Boss) ScaleDownWorker(workerName string) (err error) {
-	b.mu.Lock()
+	b.mu.RLock()
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; ok {
 		worker.ScaleDown(b.hr)
 	}
-	b.mu.Unlock()
+	b.mu.RUnlock()
 	return
 }
 
 // TerminateWorker will remove the worker immediately, effectively cancelling all queued work.
 func (b *Boss) TerminateWorker(workerName string) (err error) {
-	b.mu.Lock()
+	b.mu.RLock()
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; ok {
 		worker.Terminate(b.hr)
 	}
-	b.mu.Unlock()
+	b.mu.RUnlock()
 	return
 }
 
