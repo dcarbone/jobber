@@ -49,12 +49,12 @@ type (
 
 // NewPitDroid will return to you a new PitDroid, the default worker prototype for jobber
 func NewPitDroid(name string, queueLength int) Worker {
-	w := &PitDroid{
+	w := PitDroid{
 		name: name,
 		jobs: make(chan Job, queueLength),
 	}
 	go w.work()
-	return w
+	return &w
 }
 
 type HiringAgencyFunc func(name string, queueLength int) Worker
@@ -62,6 +62,7 @@ type HiringAgencyFunc func(name string, queueLength int) Worker
 // HiringAgency allows you to create your own worker hiring function in case you don't like PitDroids.
 var HiringAgency HiringAgencyFunc = NewPitDroid
 
+// Name returns the name of this worker
 func (w *PitDroid) Name() string {
 	w.mu.RLock()
 	n := w.name
@@ -69,6 +70,7 @@ func (w *PitDroid) Name() string {
 	return n
 }
 
+// Length returns the current number of items this worker has in its queue
 func (w *PitDroid) Length() int {
 	w.mu.RLock()
 	l := len(w.jobs)
@@ -76,6 +78,7 @@ func (w *PitDroid) Length() int {
 	return l
 }
 
+// AddJob will append a job to this worker's queue
 func (w *PitDroid) AddJob(j Job) (err error) {
 	w.mu.RLock()
 	if w.stopping {
@@ -87,6 +90,7 @@ func (w *PitDroid) AddJob(j Job) (err error) {
 	return
 }
 
+// ScaleDown will tell this worker to stop accepting new jobs, complete all jobs left in its queue, then send itself to HR
 func (w *PitDroid) ScaleDown(hr HR) {
 	w.mu.Lock()
 	if !w.stopping {
@@ -97,6 +101,7 @@ func (w *PitDroid) ScaleDown(hr HR) {
 	w.mu.Unlock()
 }
 
+// Terminate will tell this worker to stop accepting new jobs, flush all current jobs from its queue, then send itself to HR
 func (w *PitDroid) Terminate(hr HR) {
 	w.mu.Lock()
 	if !w.stopping {
@@ -169,16 +174,18 @@ func NewBossWithContext(ctx context.Context) *Boss {
 }
 
 func newBoss(ctx context.Context) *Boss {
-	b := &Boss{
+	ctx, cancel := context.WithCancel(ctx)
+	b := Boss{
 		workers: make(map[string]Worker),
 		hr:      make(chan Worker, 100),
 		wg:      new(sync.WaitGroup),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
-	b.ctx, b.cancel = context.WithCancel(ctx)
 
 	go b.runner()
 
-	return b
+	return &b
 }
 
 // Shutdown will attempt to gracefully shutdown, completing all currently queued jobs but no longer accepting new ones
