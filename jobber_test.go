@@ -1,7 +1,6 @@
 package jobber_test
 
 import (
-	"context"
 	"errors"
 	"log"
 	"math/rand"
@@ -62,7 +61,7 @@ func newTestBoss(_ *testing.T) *jobber.Boss {
 }
 
 func hireDan(t *testing.T, b *jobber.Boss, queueLen int) {
-	if err := b.HireWorker(context.Background(), "dan", queueLen); err != nil {
+	if err := b.HireWorker("dan", queueLen); err != nil {
 		t.Logf("Unable to hire worker: %s", err)
 		t.FailNow()
 	}

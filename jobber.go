@@ -80,16 +80,23 @@ func (w *PitDroid) Length() int {
 }
 
 // AddJob will append a job to this worker's queue
-func (w *PitDroid) AddJob(j Job) (err error) {
+func (w *PitDroid) AddJob(j Job) error {
+	var err error
+
 	w.mu.RLock()
 	if w.stopping {
 		w.mu.RUnlock()
-		err = fmt.Errorf("worker \"%s\" has been told to stop, cannot add new jobs", w.name)
+		err = fmt.Errorf("!! Worker %q: worker is stopping, cannot add job %T", w.name, j)
 	} else {
 		w.mu.RUnlock()
-		w.jobs <- j
+		select {
+		case w.jobs <- j:
+		default:
+			err = fmt.Errorf("!!! Worker %q: worker queue is full, cannot add %T", w.name, j)
+		}
 	}
-	return
+
+	return err
 }
 
 // ScaleDown will tell this worker to stop accepting new jobs, complete all jobs left in its queue, then send itself to HR
@@ -122,20 +129,25 @@ func (w *PitDroid) work() {
 
 	defer func(name string) {
 		if r := recover(); r != nil {
-			log.Printf("Worker %s had a job panic: %#v", name, r)
-			log.Print("Trace:")
+			log.Printf("!!! Worker %q: panic during job execution: %#v", name, r)
+			log.Print("!!! Worker %q: Trace:")
 			log.Print(string(debug.Stack()))
-			log.Printf("Sending %s back to work...", w.name)
+			log.Printf("!!! Worker %q: restarting work after panic...", w.name)
 			if job != nil {
 				select {
 				case job.RespondTo() <- fmt.Errorf("panic: %#v", r):
 				default:
-					log.Printf("!!! Unable to push to job %T response channel after panic!!!", job)
+					log.Printf("!!! Worker %q: unable to push to job %T response channel after panic!!!", w.name, job)
 				}
 			}
 			go w.work() // only on panic recovery
 		} else {
-			w.hr <- w
+			select {
+			case w.hr <- w:
+				log.Printf("! Worker %q: pushed to HR", w.name)
+			default:
+				log.Printf("!!! Worker %q: unable to push onto HR chan (len: %d)!", w.name, len(w.hr))
+			}
 		}
 	}(w.name)
 
@@ -270,15 +282,16 @@ func (b *Boss) Worker(name string) (worker Worker) {
 }
 
 // HireWorker will attempt to hire a new worker using the specified HiringAgency and add them to the job pool.
-func (b *Boss) HireWorker(ctx context.Context, name string, queueLength int) error {
+func (b *Boss) HireWorker(name string, queueLength int) error {
 	if 0 > queueLength {
 		queueLength = 0
 	}
-	return b.PlaceWorker(HiringAgency(ctx, name, queueLength, b.hr))
+	return b.PlaceWorker(HiringAgency(b.ctx, name, queueLength, b.hr))
 }
 
 // PlaceWorker will attempt to add a hired worker to the job pool, if one doesn't already exist with that name
-func (b *Boss) PlaceWorker(worker Worker) (err error) {
+func (b *Boss) PlaceWorker(worker Worker) error {
+	var err error
 	b.mu.Lock()
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
@@ -289,25 +302,27 @@ func (b *Boss) PlaceWorker(worker Worker) (err error) {
 		b.workers[worker.Name()] = worker
 	}
 	b.mu.Unlock()
-	return
+	return err
 }
 
 // AddWork will push a new job to a worker's queue
-func (b *Boss) AddJob(workerName string, j Job) (err error) {
+func (b *Boss) AddJob(workerName string, j Job) error {
+	var err error
 	b.mu.RLock()
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; !ok {
-		err = fmt.Errorf("worker %q found", workerName)
+		err = fmt.Errorf("worker not found: %q", workerName)
 	} else {
 		err = worker.AddJob(j)
 	}
 	b.mu.RUnlock()
-	return
+	return err
 }
 
 // ScaleDownWorker will tell a worker to finish up their queue then remove them
-func (b *Boss) ScaleDownWorker(workerName string) (err error) {
+func (b *Boss) ScaleDownWorker(workerName string) error {
+	var err error
 	b.mu.RLock()
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
@@ -315,7 +330,7 @@ func (b *Boss) ScaleDownWorker(workerName string) (err error) {
 		worker.ScaleDown()
 	}
 	b.mu.RUnlock()
-	return
+	return err
 }
 
 // TerminateWorker will remove the worker immediately, effectively cancelling all queued work.
