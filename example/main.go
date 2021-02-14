@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -47,8 +46,8 @@ func main() {
 
 	boss := jobber.NewBoss()
 
-	_ = boss.HireWorker(context.Background(), "bob", 10)
-	_ = boss.HireWorker(context.Background(), "jim", 0)
+	_ = boss.HireWorker("bob", 10)
+	_ = boss.HireWorker("jim", 0)
 
 	respChan := make(chan error, 20)
 
