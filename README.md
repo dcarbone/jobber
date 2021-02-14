@@ -3,7 +3,7 @@ Little job queue thing for golang
 
 [![](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://godoc.org/github.com/dcarbone/jobber)
 
-A very basic example is provided in [main](main/main.go)
+A very basic example is provided in [main](example/main.go)
 
 # Overview
 

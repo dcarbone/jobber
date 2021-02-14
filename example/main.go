@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/dcarbone/jobber"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/dcarbone/jobber/v2"
 )
 
 type importantJob struct {
@@ -45,8 +47,8 @@ func main() {
 
 	boss := jobber.NewBoss()
 
-	boss.HireWorker("bob", 10)
-	boss.HireWorker("jim", 0)
+	_ = boss.HireWorker(context.Background(), "bob", 10)
+	_ = boss.HireWorker(context.Background(), "jim", 0)
 
 	respChan := make(chan error, 20)
 
@@ -73,12 +75,12 @@ func main() {
 
 func bob(b *jobber.Boss, respondTo chan error) {
 	for i := 0; i < 10; i++ {
-		b.AddJob("bob", &lessImportantJob{id: i, respondTo: respondTo})
+		_ = b.AddJob("bob", &lessImportantJob{id: i, respondTo: respondTo})
 	}
 }
 
 func jim(b *jobber.Boss, respondTo chan error) {
 	for i := 0; i < 10; i++ {
-		b.AddJob("jim", &importantJob{id: i, respondTo: respondTo})
+		_ = b.AddJob("jim", &importantJob{id: i, respondTo: respondTo})
 	}
 }

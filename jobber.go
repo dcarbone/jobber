@@ -8,59 +8,60 @@ import (
 	"sync"
 )
 
-type (
-	// Job represents any unit of work that you'd like to task a Worker with.  Any context handling should be done in your
-	// Process() implementation.
-	Job interface {
-		// Process must contain whatever logic is needed to perform the job, returning whatever error is generated while
-		// processing (if any)
-		Process() error
-		// RespondTo must be passed whatever output came from Process()
-		RespondTo() chan<- error
-	}
+// Job represents any unit of work that you'd like to task a Worker with.  Any context handling should be done in your
+// Process() implementation.
+type Job interface {
+	// Process must contain whatever logic is needed to perform the job, returning whatever error is generated while
+	// processing (if any)
+	Process() error
+	// RespondTo must be passed whatever output came from Process()
+	RespondTo() chan<- error
+}
 
-	// HR is where workers are sent when they are done and should be removed from the Boss
-	HR chan<- Worker
+// HR is where workers are sent when they are done and should be removed from the Boss
+type HR chan<- Worker
 
-	Worker interface {
-		// Name must return the name of worker.  This must be unique across all workers managed by the boss
-		Name() string
-		// Length must return the size of the current queue of work for this worker.
-		Length() int
-		// AddJob must attempt to add a new job to the worker's queue, failing if the worker has been told to stop
-		AddJob(Job) error
-		// ScaleDown must mark the worker as stopped, process any and all jobs remaining in it's queue, and then finally
-		// send itself to HR
-		ScaleDown(HR)
-		// Terminate must send an error message to all remaining jobs in this worker's queue, then send itself to HR.
-		Terminate(HR)
-	}
+type Worker interface {
+	// Name must return the name of worker.  This must be unique across all workers managed by the boss
+	Name() string
+	// Length must return the size of the current queue of work for this worker.
+	Length() int
+	// AddJob must attempt to add a new job to the worker's queue, failing if the worker has been told to stop
+	AddJob(Job) error
+	// ScaleDown must mark the worker as stopped, process any and all jobs remaining in it's queue, and then finally
+	// send itself to HR
+	ScaleDown()
+	// Terminate must send an error message to all remaining jobs in this worker's queue, then send itself to HR.
+	Terminate()
+}
 
-	// PitDroids are simple workers that will do as instructed.
-	PitDroid struct {
-		mu         sync.RWMutex
-		name       string
-		jobs       chan Job
-		terminated bool
-		stopping   bool
-		hr         HR
-	}
-)
+// PitDroids are simple workers that will do as instructed.
+type PitDroid struct {
+	mu         sync.RWMutex
+	ctx        context.Context
+	name       string
+	jobs       chan Job
+	terminated bool
+	stopping   bool
+	hr         HR
+}
+
+type HiringAgencyFunc func(ctx context.Context, name string, queueLength int, hr HR) Worker
+
+// HiringAgency allows you to create your own worker hiring function in case you don't like PitDroids.
+var HiringAgency HiringAgencyFunc = NewPitDroid
 
 // NewPitDroid will return to you a new PitDroid, the default worker prototype for jobber
-func NewPitDroid(name string, queueLength int) Worker {
+func NewPitDroid(ctx context.Context, name string, queueLength int, hr HR) Worker {
 	w := PitDroid{
 		name: name,
+		ctx:  ctx,
 		jobs: make(chan Job, queueLength),
+		hr:   hr,
 	}
 	go w.work()
 	return &w
 }
-
-type HiringAgencyFunc func(name string, queueLength int) Worker
-
-// HiringAgency allows you to create your own worker hiring function in case you don't like PitDroids.
-var HiringAgency HiringAgencyFunc = NewPitDroid
 
 // Name returns the name of this worker
 func (w *PitDroid) Name() string {
@@ -82,40 +83,42 @@ func (w *PitDroid) Length() int {
 func (w *PitDroid) AddJob(j Job) (err error) {
 	w.mu.RLock()
 	if w.stopping {
+		w.mu.RUnlock()
 		err = fmt.Errorf("worker \"%s\" has been told to stop, cannot add new jobs", w.name)
 	} else {
+		w.mu.RUnlock()
 		w.jobs <- j
 	}
-	w.mu.RUnlock()
 	return
 }
 
 // ScaleDown will tell this worker to stop accepting new jobs, complete all jobs left in its queue, then send itself to HR
-func (w *PitDroid) ScaleDown(hr HR) {
+func (w *PitDroid) ScaleDown() {
 	w.mu.Lock()
 	if !w.stopping {
 		w.stopping = true
-		w.hr = hr
 		close(w.jobs)
 	}
 	w.mu.Unlock()
 }
 
 // Terminate will tell this worker to stop accepting new jobs, flush all current jobs from its queue, then send itself to HR
-func (w *PitDroid) Terminate(hr HR) {
+func (w *PitDroid) Terminate() {
 	w.mu.Lock()
 	if !w.stopping {
-		w.terminated = true
 		w.stopping = true
-		w.hr = hr
+		w.terminated = true
 		close(w.jobs)
 	}
 	w.mu.Unlock()
 }
 
 func (w *PitDroid) work() {
-	var terminated bool
-	var job Job
+	var (
+		terminated bool
+		job        Job
+		ok         bool
+	)
 
 	defer func(name string) {
 		if r := recover(); r != nil {
@@ -127,6 +130,7 @@ func (w *PitDroid) work() {
 				select {
 				case job.RespondTo() <- fmt.Errorf("panic: %#v", r):
 				default:
+					log.Printf("!!! Unable to push to job %T response channel after panic!!!", job)
 				}
 			}
 			go w.work() // only on panic recovery
@@ -135,18 +139,43 @@ func (w *PitDroid) work() {
 		}
 	}(w.name)
 
-	for job = range w.jobs {
-		w.mu.Lock()
-		terminated = w.terminated
-		w.mu.Unlock()
-		// TODO: Don't like this, find better way
-		if terminated {
-			select {
-			case job.RespondTo() <- errors.New("worker terminated"): // try to respond, don't block whole worker if they aren't reading from queue or it's full.
-			default: // fall on floor
+	for {
+		select {
+		case <-w.ctx.Done():
+			err := w.ctx.Err()
+			if errors.Is(err, context.Canceled) {
+				log.Printf("! Worker %q: context has been cancelled, terminating...", w.name)
+				w.Terminate()
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				log.Printf("! Worker %q: context deadline exceeded, scaling down...", w.name)
+				w.ScaleDown()
+			} else {
+				log.Printf("!! Worker %q: unknown context error seen, scaling down: %v", w.name, err)
+				w.ScaleDown()
 			}
-		} else {
-			job.RespondTo() <- job.Process()
+		case job, ok = <-w.jobs:
+			if !ok {
+				log.Printf("! Worker %q: job queue has been closed, exiting run loop", w.name)
+				return
+			}
+			w.mu.Lock()
+			terminated = w.terminated
+			w.mu.Unlock()
+			// TODO: Don't like this, find better way
+			if terminated {
+				select {
+				case job.RespondTo() <- fmt.Errorf("worker %q terminated", w.name): // try to respond, don't block whole worker if they aren't reading from queue or it's full.
+				default: // fall on floor
+					log.Printf("!!! Worker %q: Could not push to job %T response channel after worker termination!", w.name, job)
+				}
+			} else {
+				res := job.Process()
+				select {
+				case job.RespondTo() <- res:
+				default:
+					log.Printf("!!! Worker %q: Could not push to job %T response channel!", w.name, job)
+				}
+			}
 		}
 	}
 }
@@ -241,11 +270,11 @@ func (b *Boss) Worker(name string) (worker Worker) {
 }
 
 // HireWorker will attempt to hire a new worker using the specified HiringAgency and add them to the job pool.
-func (b *Boss) HireWorker(name string, queueLength int) error {
+func (b *Boss) HireWorker(ctx context.Context, name string, queueLength int) error {
 	if 0 > queueLength {
 		queueLength = 0
 	}
-	return b.PlaceWorker(HiringAgency(name, queueLength))
+	return b.PlaceWorker(HiringAgency(ctx, name, queueLength, b.hr))
 }
 
 // PlaceWorker will attempt to add a hired worker to the job pool, if one doesn't already exist with that name
@@ -254,7 +283,7 @@ func (b *Boss) PlaceWorker(worker Worker) (err error) {
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if _, ok := b.workers[worker.Name()]; ok {
-		err = fmt.Errorf("a worker for job \"%s\" already exists", worker.Name())
+		err = fmt.Errorf("worker %q already exists", worker.Name())
 	} else {
 		b.wg.Add(1)
 		b.workers[worker.Name()] = worker
@@ -269,7 +298,7 @@ func (b *Boss) AddJob(workerName string, j Job) (err error) {
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; !ok {
-		err = fmt.Errorf("no worker named \"%s\" found", workerName)
+		err = fmt.Errorf("worker %q found", workerName)
 	} else {
 		err = worker.AddJob(j)
 	}
@@ -283,7 +312,7 @@ func (b *Boss) ScaleDownWorker(workerName string) (err error) {
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; ok {
-		worker.ScaleDown(b.hr)
+		worker.ScaleDown()
 	}
 	b.mu.RUnlock()
 	return
@@ -295,7 +324,7 @@ func (b *Boss) TerminateWorker(workerName string) (err error) {
 	if b.shutdowned {
 		err = errors.New("boss is shutdowned")
 	} else if worker, ok := b.workers[workerName]; ok {
-		worker.Terminate(b.hr)
+		worker.Terminate()
 	}
 	b.mu.RUnlock()
 	return
@@ -324,9 +353,9 @@ runLoop:
 	// range through all remaining workers and either terminate or scale down, depending...
 	for _, w := range b.workers {
 		if terminated {
-			w.Terminate(b.hr)
+			w.Terminate()
 		} else {
-			w.ScaleDown(b.hr)
+			w.ScaleDown()
 		}
 	}
 	// decrement wait group
