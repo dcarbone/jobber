@@ -1,11 +1,10 @@
 language: go
 
-dist: trusty
+dist: xenial
 sudo: false
 
 go:
-  - 1.8.x
-  - 1.9.x
+  - 1.15.x
 
 branches:
   only:
