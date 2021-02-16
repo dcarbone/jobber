@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcarbone/jobber/v2"
+	"github.com/dcarbone/jobber/v3"
 )
 
 const (
@@ -28,14 +28,14 @@ func init() {
 type (
 	simpleJob struct {
 		id          uint64
-		resp        chan error
+		resp        chan *jobber.JobResponse
 		shouldErr   bool
 		shouldPanic bool
 	}
 )
 
 func newSimpleJob(shouldErr, shouldPanic bool, respChanLen int) *simpleJob {
-	j := &simpleJob{resp: make(chan error, respChanLen), shouldErr: shouldErr, shouldPanic: shouldPanic}
+	j := &simpleJob{resp: make(chan *jobber.JobResponse, respChanLen), shouldErr: shouldErr, shouldPanic: shouldPanic}
 	j.id = atomic.AddUint64(&jobnum, 1)
 	return j
 }
@@ -52,12 +52,12 @@ func (j *simpleJob) Process() error {
 	return nil
 }
 
-func (j *simpleJob) RespondTo() chan<- error {
+func (j *simpleJob) RespondTo() chan<- *jobber.JobResponse {
 	return j.resp
 }
 
 func newTestBoss(_ *testing.T) *jobber.Boss {
-	return jobber.NewBoss()
+	return jobber.NewBoss(jobber.DefaultConfig())
 }
 
 func hireDan(t *testing.T, b *jobber.Boss, queueLen int) {
@@ -123,9 +123,9 @@ func TestWorker_PanicRecovery(t *testing.T) {
 	})
 
 	t.Run("CanStillFire", func(t *testing.T) {
-		b.Shutdown()
+		b.ScaleDownAll()
 		if b.HasWorker("dan") {
-			t.Log("dan should not be around, boss gone")
+			t.Log("dan should not be around, all workers scaled down")
 			t.FailNow()
 		}
 	})

@@ -7,12 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dcarbone/jobber/v2"
+	"github.com/dcarbone/jobber/v3"
 )
 
 type importantJob struct {
 	id        int
-	respondTo chan error
+	respondTo chan *jobber.JobResponse
 }
 
 func (j *importantJob) Process() error {
@@ -20,13 +20,13 @@ func (j *importantJob) Process() error {
 	return nil
 }
 
-func (j *importantJob) RespondTo() chan<- error {
+func (j *importantJob) RespondTo() chan<- *jobber.JobResponse {
 	return j.respondTo
 }
 
 type lessImportantJob struct {
 	id        int
-	respondTo chan error
+	respondTo chan *jobber.JobResponse
 }
 
 func (j *lessImportantJob) Process() error {
@@ -34,7 +34,7 @@ func (j *lessImportantJob) Process() error {
 	return nil
 }
 
-func (j *lessImportantJob) RespondTo() chan<- error {
+func (j *lessImportantJob) RespondTo() chan<- *jobber.JobResponse {
 	return j.respondTo
 }
 
@@ -44,12 +44,12 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	boss := jobber.NewBoss()
+	boss := jobber.NewBoss(jobber.DefaultConfig())
 
 	_ = boss.HireWorker("bob", 10)
 	_ = boss.HireWorker("jim", 0)
 
-	respChan := make(chan error, 20)
+	respChan := make(chan *jobber.JobResponse, 20)
 
 	go bob(boss, respChan)
 	go jim(boss, respChan)
@@ -62,7 +62,7 @@ func main() {
 			fmt.Println(fmt.Sprintf("Received \"%v\" from response channel", err))
 			i++
 			if i >= 20 {
-				boss.Shutdown()
+				boss.ScaleDownAll()
 				return
 			}
 		case sig := <-sigChan:
@@ -72,13 +72,13 @@ func main() {
 	}
 }
 
-func bob(b *jobber.Boss, respondTo chan error) {
+func bob(b *jobber.Boss, respondTo chan *jobber.JobResponse) {
 	for i := 0; i < 10; i++ {
 		_ = b.AddJob("bob", &lessImportantJob{id: i, respondTo: respondTo})
 	}
 }
 
-func jim(b *jobber.Boss, respondTo chan error) {
+func jim(b *jobber.Boss, respondTo chan *jobber.JobResponse) {
 	for i := 0; i < 10; i++ {
 		_ = b.AddJob("jim", &importantJob{id: i, respondTo: respondTo})
 	}
